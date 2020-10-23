@@ -4,4 +4,3 @@
 @interface RNMapsDirections : NSObject <RCTBridgeModule>
 
 @end
-  

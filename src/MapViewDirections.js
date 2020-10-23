@@ -2,6 +2,9 @@ import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import MapView from 'react-native-maps';
 import isEqual from 'lodash.isequal';
+import { NativeModules } from 'react-native';
+
+const { RNMapsDirections } = NativeModules;
 
 const WAYPOINT_LIMIT = 10;
 
@@ -92,11 +95,14 @@ class MapViewDirections extends Component {
 			precision = 'low',
 			timePrecision = 'none',
 			channel,
+			provider = 'google', // google / apple
 		} = props;
 
-		if (!apikey) {
+		if (provider === 'google' && !apikey) {
 			console.warn(`MapViewDirections Error: Missing API Key`); // eslint-disable-line no-console
 			return;
+		} else if (provider === 'apple' && mode === 'BICYCLING') {
+			console.warn(`MapViewDirections Error: Mode 'BICYCLING' not available with provider apple.`); // eslint-disable-line no-console
 		}
 
 		if (!initialOrigin || !initialDestination) {
@@ -149,39 +155,53 @@ class MapViewDirections extends Component {
 				waypoints,
 			} = route;
 
-			if (origin.latitude && origin.longitude) {
-				origin = `${origin.latitude},${origin.longitude}`;
+			if (provider === 'google') {
+				if (origin.latitude && origin.longitude) {
+					origin = `${origin.latitude},${origin.longitude}`;
+				}
+
+				if (destination.latitude && destination.longitude) {
+					destination = `${destination.latitude},${destination.longitude}`;
+				}
+
+				waypoints = waypoints
+					.map(waypoint => (waypoint.latitude && waypoint.longitude) ? `${waypoint.latitude},${waypoint.longitude}` : waypoint)
+					.join('|');
+
+				if (optimizeWaypoints) {
+					waypoints = `optimize:true|${waypoints}`;
+				}
+
+				if (index === 0) {
+					onStart && onStart({
+						origin,
+						destination,
+						waypoints: initialWaypoints,
+					});
+				}
+
+				return (
+					this.fetchRoute(directionsServiceBaseUrl, origin, waypoints, destination, apikey, mode, language, region, precision, timePrecisionString, channel)
+						.then(result => {
+							return result;
+						})
+						.catch(errorMessage => {
+							return Promise.reject(errorMessage);
+						})
+				);
 			}
-
-			if (destination.latitude && destination.longitude) {
-				destination = `${destination.latitude},${destination.longitude}`;
-			}
-
-			waypoints = waypoints
-				.map(waypoint => (waypoint.latitude && waypoint.longitude) ? `${waypoint.latitude},${waypoint.longitude}` : waypoint)
-				.join('|');
-
-			if (optimizeWaypoints) {
-				waypoints = `optimize:true|${waypoints}`;
-			}
-
-			if (index === 0) {
-				onStart && onStart({
-					origin,
-					destination,
-					waypoints: initialWaypoints,
+			else {
+				return new Promise((resolve) => {
+					RNMapsDirections.getRouteDetails({
+						originLatitude: origin.latitude,
+						originLongitude: origin.longitude,
+						destinationLatitude: destination.latitude,
+						destinationLongitude: destination.longitude,
+					}, mode, result => {
+						resolve(result);
+					});
 				});
 			}
-
-			return (
-				this.fetchRoute(directionsServiceBaseUrl, origin, waypoints, destination, apikey, mode, language, region, precision, timePrecisionString, channel)
-					.then(result => {
-						return result;
-					})
-					.catch(errorMessage => {
-						return Promise.reject(errorMessage);
-					})
-			);
 		})).then(results => {
 			// Combine all Directions API Request results into one
 			const result = results.reduce((acc, { distance, duration, coordinates, fare, waypointOrder }) => {
@@ -349,6 +369,7 @@ MapViewDirections.propTypes = {
 	precision: PropTypes.oneOf(['high', 'low']),
 	timePrecision: PropTypes.oneOf(['now', 'none']),
 	channel: PropTypes.string,
+	provider: PropTypes.oneOf(['google', 'apple']),
 };
 
 export default MapViewDirections;

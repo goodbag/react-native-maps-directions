@@ -6,9 +6,38 @@
 #import <React/RCTUtils.h>
 #import <React/RCTLog.h>
 
-@implementation RNMapsDirections
+@interface RCTConvert (Mapkit)
+
++ (MKCoordinateSpan)MKCoordinateSpan:(id)json;
++ (MKCoordinateRegion)MKCoordinateRegion:(id)json;
+
+@end
+
+@implementation RCTConvert(MapKit)
+
++ (MKCoordinateSpan)MKCoordinateSpan:(id)json
+{
+    json = [self NSDictionary:json];
+    return (MKCoordinateSpan){
+        [self CLLocationDegrees:json[@"latitudeDelta"]],
+        [self CLLocationDegrees:json[@"longitudeDelta"]]
+    };
+}
+
++ (MKCoordinateRegion)MKCoordinateRegion:(id)json
+{
+    return (MKCoordinateRegion){
+        [self CLLocationCoordinate2D:json],
+        [self MKCoordinateSpan:json]
+    };
+}
+
+@end
+
+@implementation RNDirections
 {
     MKLocalSearch *localSearch;
+    MKDirectionsRequest *directionRequest;
 }
 
 - (dispatch_queue_t)methodQueue
@@ -18,9 +47,40 @@
 
 RCT_EXPORT_MODULE()
 
-RCT_EXPORT_METHOD(fetchDirections:(NSDictionary *)placemarks callback:(RCTResponseSenderBlock)callback){
+- (NSArray *)formatLocalSearchCallback:(MKLocalSearchResponse *)localSearchResponse
+{
+    NSMutableArray *RCTResponse = [[NSMutableArray alloc] init];
     
-    [directionRequest cancel];
+    for (MKMapItem *mapItem in localSearchResponse.mapItems) {
+        NSMutableDictionary *formedLocation = [[NSMutableDictionary alloc] init];
+        
+        [formedLocation setValue:mapItem.name forKey:@"name"];
+        [formedLocation setValue:mapItem.url.absoluteURL forKey:@"absoluteUrl"];
+        [formedLocation setValue:mapItem.url.absoluteString forKey:@"absoluteStrUrl"];
+        if (@available(iOS 9.0, *)) {
+            [formedLocation setValue:mapItem.timeZone forKey:@"timeZone"];
+        } else {
+            // Fallback on earlier versions
+        }
+        [formedLocation setObject:[NSNumber numberWithBool:mapItem.isCurrentLocation] forKey:@"isCurrentLocation"];
+        if (@available(iOS 13.0, *)) {
+            [formedLocation setValue:mapItem.pointOfInterestCategory forKey:@"pointOfInterestCategory"];
+        } else {
+            // Fallback on earlier versions
+        }
+        [formedLocation setValue:mapItem.placemark.title forKey:@"address"];
+        [formedLocation setValue:@{@"latitude": @(mapItem.placemark.coordinate.latitude),
+                                   @"longitude": @(mapItem.placemark.coordinate.longitude)} forKey:@"location"];
+        
+        [RCTResponse addObject:formedLocation];
+    }
+    
+    return [RCTResponse copy];
+}
+
+RCT_EXPORT_METHOD(getRouteDetails:(NSDictionary *)placemarks callback:(RCTResponseSenderBlock)callback){
+    
+//    [directionRequest cancel];
     
     double originLatitude = [[placemarks objectForKey:@"originLatitude"] doubleValue];
     double originLongitude = [[placemarks objectForKey:@"originLongitude"] doubleValue];
